@@ -1,0 +1,22 @@
+name: datathon-env
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.11
+  - numpy
+  - scipy
+  - xarray
+  - netCDF4
+  - dask
+  - zarr
+  - matplotlib
+  - scikit-image
+  - opencv
+  - langgraph
+  - pip:
+      - llama-index
+      - git+https://github.com/openai/CLIP.git  # OpenAI CLIP for vision-language alignment
+      # The following are open-source LLMs, typically run outside conda, but included for completeness
+      # - llama3  # LLaMA 3 (install via pip or external tools, placeholder)
+      # - qwen2.5  # Qwen 2.5 (install via pip or external tools, placeholder)
+      # - mixtral  # Mixtral (install via pip or external tools, placeholder)
