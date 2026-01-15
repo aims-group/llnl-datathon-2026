@@ -18,7 +18,8 @@ dependencies:
   - scikit-image
   # Agent / orchestration
   - langgraph
-  # OpenAI-compatible client (used for Ollama)
+  # LLM clients
+  - ollama
   - openai
   # Dev / QA
   - ruff
