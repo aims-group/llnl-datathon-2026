@@ -8,23 +8,17 @@ dependencies:
   - scipy
   - matplotlib
   # Data handling
+  - netCDF4
   - xarray
   - xcdat
-  - netCDF4
   - zarr
   # Parallel and image processing
   - dask
   - scikit-image
-  - opencv
   # ML/AI frameworks
+  - langchain-openai
   - langgraph
   # QA tools
   - ruff
-  - pip:
-      # Vision-language alignment
-      - llama-index
-      - git+https://github.com/openai/CLIP.git
-      # Open-source LLMs (placeholders, install externally if needed)
-      # - llama3
-      # - qwen2.5
-      # - mixtral
+  # Development tools
+  - jupyterlab
