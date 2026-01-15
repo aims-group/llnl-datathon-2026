@@ -19,7 +19,6 @@ dependencies:
   # Agent / orchestration
   - langgraph
   # LLM clients
-  - ollama
   - openai
   # Dev / QA
   - ruff

@@ -104,43 +104,39 @@ Leave this running while using the project.
 
 ### 4. Pull the LLM Model
 
-By default, this project uses **Qwen2.5** models via Ollama.
+By default, this project uses **LLaMA 3.1** models via Ollama.
 
 #### Recommended (most systems, 16 GB RAM)
 
-For typical laptops and desktops with **16 GB RAM**, use the 7B model:
+For typical laptops and desktops with **~16 GB RAM**, use the **8B model**:
 
 ```bash
-ollama pull qwen2.5:7b
+ollama pull llama3.1:8b
 ```
 
 Test the model:
 
 ```bash
-ollama run qwen2.5:7b "Summarize the purpose of Earth system model diagnostics."
+ollama run llama3.1:8b "Summarize the purpose of Earth system model diagnostics."
 ```
 
-This model provides good reasoning quality while remaining lightweight enough
-for local prototyping and proof-of-concept work.
+This model provides **sufficient reasoning quality for agentic scientific
+workflows** while remaining lightweight enough for local prototyping and
+proof-of-concept development.
 
-Optional (larger-memory systems)
+---
 
-If your system has ≥32 GB RAM (or sufficient GPU VRAM), you may use the
-larger 14B model for improved reasoning quality:
+#### Optional (larger-memory systems)
+
+If your system has **≥32 GB RAM** or substantial GPU VRAM, you may use a larger
+variant for improved reasoning quality:
 
 ```bash
-ollama pull qwen2.5:14b
+ollama pull llama3.1:70b-instruct
 ```
 
-Test the model:
-
-```bash
-ollama run qwen2.5:14b "Summarize the purpose of Earth system model diagnostics."
-```
-
-Note: The 14B model is large (tens of GB) and may fail or perform poorly
-on systems with limited memory. If you encounter out-of-memory errors,
-switch to qwen2.5:7b.
+> **Note:** The 70B model is significantly more resource-intensive and is not
+> required for Datathon-scale prototypes.
 
 #### Model selection
 

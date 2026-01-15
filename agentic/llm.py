@@ -2,19 +2,71 @@
 Centralized LLM configuration for agentic scientific workflows.
 
 PoC / prototyping version:
-- Uses a local Qwen 2.5 model via Ollama
-- OpenAI-compatible API for simplicity and debuggability
+- Supports Ollama (OpenAI-compatible endpoint) and OpenAI API
+- Backend/model/temperature configured via environment variables (.env)
 """
 
-from typing import Any, List, Dict
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, List, Optional
+
 from openai import OpenAI
 
-_client = OpenAI(
-    base_url="http://localhost:11434/v1",
-    api_key="ollama",  # required but unused
-)
+# -----------------------------------------------------------------------------
+# Configuration via environment variables
+# -----------------------------------------------------------------------------
+# .env example:
+#   LLM_BACKEND=ollama          # "ollama" or "openai"
+#   LLM_MODEL=qwen2.5:7b        # e.g., "qwen2.5:7b" or "gpt-4o-mini"
+#   LLM_TEMPERATURE=0.1
+#   LLM_MAX_TOKENS=2048
+#   OLLAMA_BASE_URL=http://localhost:11434/v1
+#   OPENAI_API_KEY=...          # required only for LLM_BACKEND=openai
+#   OPENAI_BASE_URL=...         # optional (usually unset)
 
-DEFAULT_MODEL = "qwen2.5:14b"  # or qwen2.5:32b if you have resources
+LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama").strip().lower()
+DEFAULT_MODEL = os.getenv("LLM_MODEL", "llama3.1:8b-instruct").strip()
+DEFAULT_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.1"))
+DEFAULT_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "2048"))
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").strip()
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "").strip()  # usually empty
+
+print(f"[LLM] backend={LLM_BACKEND}, model={DEFAULT_MODEL}, temp={DEFAULT_TEMPERATURE}")
+
+
+def _make_client() -> OpenAI:
+    """
+    Create an OpenAI client for the configured backend.
+    - ollama: uses OpenAI-compatible API at OLLAMA_BASE_URL; api_key is required but unused.
+    - openai: uses standard OpenAI API (requires OPENAI_API_KEY in environment).
+    """
+    if LLM_BACKEND == "ollama":
+        return OpenAI(
+            base_url=OLLAMA_BASE_URL,
+            api_key="ollama",  # required by the SDK; ignored by Ollama
+        )
+
+    if LLM_BACKEND == "openai":
+        # OPENAI_API_KEY is read automatically from the environment by the SDK.
+        # Optionally support OPENAI_BASE_URL for non-default routing/proxies.
+        kwargs: Dict[str, Any] = {}
+        if OPENAI_BASE_URL:
+            kwargs["base_url"] = OPENAI_BASE_URL
+
+        return OpenAI(**kwargs)
+
+    raise ValueError(
+        f"Unsupported LLM_BACKEND={LLM_BACKEND!r}. Use 'ollama' or 'openai'."
+    )
+
+
+_client = _make_client()
+
+# -----------------------------------------------------------------------------
+# System prompt
+# -----------------------------------------------------------------------------
 
 SCIENTIFIC_AGENT_SYSTEM_PROMPT = """\
 You are a scientific analysis agent assisting with Earth system model (ESM)
@@ -37,17 +89,29 @@ def system_message() -> Dict[str, str]:
     return {"role": "system", "content": SCIENTIFIC_AGENT_SYSTEM_PROMPT}
 
 
+# -----------------------------------------------------------------------------
+# LLM call wrapper
+# -----------------------------------------------------------------------------
+
+
 def call_llm(
     messages: List[Dict[str, str]],
-    model: str = DEFAULT_MODEL,
-    temperature: float = 0.1,
-    max_tokens: int = 2048,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Standard LLM call wrapper.
 
-    Returns raw content + metadata for logging and analysis.
+    Defaults come from environment variables:
+      - LLM_MODEL
+      - LLM_TEMPERATURE
+      - LLM_MAX_TOKENS
     """
+    model = model or DEFAULT_MODEL
+    temperature = DEFAULT_TEMPERATURE if temperature is None else temperature
+    max_tokens = DEFAULT_MAX_TOKENS if max_tokens is None else max_tokens
+
     response = _client.chat.completions.create(
         model=model,
         messages=messages,
@@ -58,5 +122,6 @@ def call_llm(
     return {
         "content": response.choices[0].message.content,
         "model": model,
+        "backend": LLM_BACKEND,
         "usage": response.usage,
     }
