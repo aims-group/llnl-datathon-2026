@@ -18,6 +18,8 @@ dependencies:
   - opencv
   # ML/AI frameworks
   - langgraph
+  # QA tools
+  - ruff
   - pip:
       # Vision-language alignment
       - llama-index
