@@ -40,11 +40,15 @@ For more details on the technologies and tools used, see `environment.yml` and p
 
 ## Setup
 
-Before running any code or notebooks, complete the following setup steps:
+Before running any code or notebooks, complete the following setup steps.
 
-### 1. Install Conda Environment
+---
 
-All dependencies are managed with Conda. Run:
+### 1. Install Conda Environment (Python Dependencies)
+
+All Python dependencies are managed with Conda.
+
+Create and activate the environment:
 
 ```bash
 conda env create -f environment.yml
@@ -57,15 +61,126 @@ If you update `environment.yml`, update your environment with:
 conda env update -f environment.yml --prune
 ```
 
-### 2. Set Up Ollama (for LLM workflows)
+Verify the environment:
 
-Install and start the Qwen2.5 14B model with Ollama:
+```bash
+python -c "import xarray, numpy; print('Python environment OK')"
+```
+
+---
+
+### 2. Install Ollama (System-Level Dependency)
+
+Ollama is used as a **local LLM service** for agentic workflows.
+
+> **Important:** Ollama is **not managed by Conda**.  
+> It must be installed at the system level.
+
+Install Ollama by following the official instructions:  
+https://ollama.com/download
+
+After installation, verify that Ollama is available:
+
+```bash
+ollama --version
+```
+
+If the command is not found, restart your terminal.
+
+---
+
+### 3. Start Ollama Service
+
+On most systems, Ollama runs automatically in the background.
+If not, start it manually:
+
+```bash
+ollama serve
+```
+
+Leave this running while using the project.
+
+---
+
+### 4. Pull the LLM Model
+
+By default, this project uses **Qwen2.5** models via Ollama.
+
+#### Recommended (most systems, 16 GB RAM)
+
+For typical laptops and desktops with **16 GB RAM**, use the 7B model:
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+Test the model:
+
+```bash
+ollama run qwen2.5:7b "Summarize the purpose of Earth system model diagnostics."
+```
+
+This model provides good reasoning quality while remaining lightweight enough
+for local prototyping and proof-of-concept work.
+
+Optional (larger-memory systems)
+
+If your system has ≥32 GB RAM (or sufficient GPU VRAM), you may use the
+larger 14B model for improved reasoning quality:
 
 ```bash
 ollama pull qwen2.5:14b
-ollama run qwen2.5:14b
 ```
 
-> **Note:** Ollama models such as Qwen2.5 14B are large (often tens of GB). Ensure you have sufficient disk space and bandwidth before downloading.
+Test the model:
 
-Refer to Ollama documentation for platform-specific installation instructions if needed.
+```bash
+ollama run qwen2.5:14b "Summarize the purpose of Earth system model diagnostics."
+```
+
+Note: The 14B model is large (tens of GB) and may fail or perform poorly
+on systems with limited memory. If you encounter out-of-memory errors,
+switch to qwen2.5:7b.
+
+#### Model selection
+
+The active model can be configured in the LLM configuration
+
+---
+
+### 5. Configure Environment Variables
+
+1. Copy `.env.template` as `.env`
+2. Configure environment variables as needed, including LLM backend, model, and
+   temperature.
+
+---
+
+### 6. Quick Sanity Check
+
+From within the Conda environment:
+
+```bash
+python - << EOF
+import ollama
+response = ollama.chat(
+    model="qwen2.5:14b",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+print(response["message"]["content"])
+EOF
+```
+
+If this succeeds, your setup is complete.
+
+---
+
+### Notes
+
+- Ollama runs as a local HTTP service (default: `localhost:11434`)
+- Python code communicates with Ollama via its client library
+- Conda manages **Python packages only**
+- Ollama manages **models and inference**
+
+This repository is designed for **prototyping and proof-of-concept work**, not
+production deployment.
