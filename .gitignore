@@ -21,6 +21,7 @@ venv/
 ENV/
 .env
 .env.*
+!.env.template
 *.bak
 *.tmp
 *.swp
