@@ -1,39 +1,25 @@
-"""Centralized LLM configuration for agentic scientific workflows.
+"""
+Centralized LLM configuration for agentic scientific workflows.
 
-Designed for Datathon / PoC use with GPT-4.1 or GPT-4o.
+PoC / prototyping version:
+- Uses OpenAI client directly (no LangChain)
+- Maximizes transparency and debuggability
 """
 
-from typing import Any
+from typing import Any, List, Dict
+from openai import OpenAI
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
+# -----------------------------------------------------------------------------
+# Client
+# -----------------------------------------------------------------------------
 
+_client = OpenAI()
 
 # -----------------------------------------------------------------------------
 # Model selection
 # -----------------------------------------------------------------------------
 
 DEFAULT_MODEL = "gpt-4.1"  # or "gpt-4o"
-
-
-def get_llm(
-    model: str = DEFAULT_MODEL,
-    temperature: float = 0.1,
-    max_tokens: int = 2048,
-) -> ChatOpenAI:
-    """
-    Return a configured ChatOpenAI instance.
-
-    Low temperature is intentional:
-    - More deterministic
-    - Better for scientific reasoning
-    - Fewer hallucinations
-    """
-    return ChatOpenAI(
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
 
 
 # -----------------------------------------------------------------------------
@@ -57,22 +43,35 @@ Your role is planning, interpretation, and explanation.
 """
 
 
-def get_system_message() -> SystemMessage:
-    return SystemMessage(content=SCIENTIFIC_AGENT_SYSTEM_PROMPT)
+def system_message() -> Dict[str, str]:
+    return {"role": "system", "content": SCIENTIFIC_AGENT_SYSTEM_PROMPT}
 
 
 # -----------------------------------------------------------------------------
-# Helper for LangGraph nodes
+# LLM call wrapper
 # -----------------------------------------------------------------------------
 
 
 def call_llm(
-    llm: ChatOpenAI,
-    messages: list,
-) -> dict[str, Any]:
+    messages: List[Dict[str, str]],
+    model: str = DEFAULT_MODEL,
+    temperature: float = 0.1,
+    max_tokens: int = 2048,
+) -> Dict[str, Any]:
     """
-    Standard LLM call wrapper for LangGraph nodes.
-    Returns a dict so it can be merged into graph state.
+    Standard LLM call wrapper.
+
+    Returns raw content + metadata for logging and analysis.
     """
-    response = llm.invoke(messages)
-    return {"messages": [response]}
+    response = _client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    return {
+        "content": response.choices[0].message.content,
+        "model": model,
+        "usage": response.usage,
+    }
