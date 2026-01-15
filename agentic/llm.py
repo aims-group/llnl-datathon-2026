@@ -2,29 +2,19 @@
 Centralized LLM configuration for agentic scientific workflows.
 
 PoC / prototyping version:
-- Uses OpenAI client directly (no LangChain)
-- Maximizes transparency and debuggability
+- Uses a local Qwen 2.5 model via Ollama
+- OpenAI-compatible API for simplicity and debuggability
 """
 
 from typing import Any, List, Dict
 from openai import OpenAI
 
-# -----------------------------------------------------------------------------
-# Client
-# -----------------------------------------------------------------------------
+_client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama",  # required but unused
+)
 
-_client = OpenAI()
-
-# -----------------------------------------------------------------------------
-# Model selection
-# -----------------------------------------------------------------------------
-
-DEFAULT_MODEL = "gpt-4.1"  # or "gpt-4o"
-
-
-# -----------------------------------------------------------------------------
-# System prompt
-# -----------------------------------------------------------------------------
+DEFAULT_MODEL = "qwen2.5:14b"  # or qwen2.5:32b if you have resources
 
 SCIENTIFIC_AGENT_SYSTEM_PROMPT = """\
 You are a scientific analysis agent assisting with Earth system model (ESM)
@@ -34,7 +24,7 @@ Guidelines:
 - Be explicit about assumptions and uncertainty.
 - Prefer step-by-step reasoning over conclusions.
 - Do not guess values; request or compute them via tools.
-- When comparing datasets or plots, explain *why* differences matter.
+- When comparing datasets or plots, explain why differences matter.
 - If evidence is insufficient, say so clearly.
 
 You do NOT perform heavy computation yourself.
@@ -45,11 +35,6 @@ Your role is planning, interpretation, and explanation.
 
 def system_message() -> Dict[str, str]:
     return {"role": "system", "content": SCIENTIFIC_AGENT_SYSTEM_PROMPT}
-
-
-# -----------------------------------------------------------------------------
-# LLM call wrapper
-# -----------------------------------------------------------------------------
 
 
 def call_llm(

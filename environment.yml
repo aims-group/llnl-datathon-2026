@@ -17,13 +17,10 @@ dependencies:
   # Parallel and image processing
   - dask
   - scikit-image
-  # ML/AI frameworks
-  - langchain-openai
+  # Agent / orchestration
   - langgraph
-  # OpenAI and Anthropic APIs
+  # OpenAI-compatible client (used for Ollama)
   - openai
-  - anthropic
-  # QA tools
+  # Dev / QA
   - ruff
-  # Development tools
   - jupyterlab
