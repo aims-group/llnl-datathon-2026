@@ -28,7 +28,6 @@ ENV/
 # Jupyter
 .ipynb_checkpoints/
 # VSCode
-.vscode/
 # macOS
 *.DS_Store
 # NetCDF
