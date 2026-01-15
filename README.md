@@ -1,4 +1,3 @@
-
 # LLNL Datathon 2026
 
 This repository contains code, environment setup, and documentation for the LLNL Datathon held January 20–21, 2026. The project focuses on agentic AI for data compression optimization, scientific data analysis, and visualization using modern open-source tools.
@@ -39,7 +38,7 @@ This repository is intended to:
 
 For more details on the technologies and tools used, see `environment.yml` and project documentation.
 
-## Prerequisites
+## Setup
 
 Before running any code or notebooks, complete the following setup steps:
 
@@ -66,6 +65,7 @@ Install and start the Qwen2.5 14B model with Ollama:
 ollama pull qwen2.5:14b
 ollama run qwen2.5:14b
 ```
+
 > **Note:** Ollama models such as Qwen2.5 14B are large (often tens of GB). Ensure you have sufficient disk space and bandwidth before downloading.
 
 Refer to Ollama documentation for platform-specific installation instructions if needed.

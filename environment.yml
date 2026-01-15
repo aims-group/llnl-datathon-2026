@@ -12,8 +12,7 @@ dependencies:
   # Data handling
   - netCDF4
   - xarray
-  - xcdat
-  - zarr
+  - xcdat>=0.11.1
   # Parallel and image processing
   - dask
   - scikit-image
