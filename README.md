@@ -69,15 +69,26 @@ python -c "import xarray, numpy; print('Python environment OK')"
 
 ---
 
-### 2. Install Ollama (System-Level Dependency)
+### 2. LLM Backend Options (Local vs Hosted)
+
+This project supports **two LLM backends**:
+
+- **Ollama (local)** — runs LLaMA 3.1 on your machine
+- **LivAI (hosted)** — LLNL-provided API access to Claude and GPT models
+
+You may use **either or both**, configured via environment variables.
+
+---
+
+### 3. Option A: Local LLM via Ollama (Default)
 
 Ollama is used as a **local LLM service** for agentic workflows.
 
-> **Important:** Ollama is **not managed by Conda**.  
+> **Important:** Ollama is **not managed by Conda**.
 > It must be installed at the system level.
 
-Install Ollama by following the official instructions:  
-https://ollama.com/download
+Install Ollama by following the official instructions:
+[https://ollama.com/download](https://ollama.com/download)
 
 After installation, verify that Ollama is available:
 
@@ -87,9 +98,7 @@ ollama --version
 
 If the command is not found, restart your terminal.
 
----
-
-### 3. Start Ollama Service
+#### Start Ollama Service
 
 On most systems, Ollama runs automatically in the background.
 If not, start it manually:
@@ -102,13 +111,11 @@ Leave this running while using the project.
 
 ---
 
-### 4. Pull the LLM Model
+#### Pull the Local LLM Model (Ollama)
 
 By default, this project uses **LLaMA 3.1** models via Ollama.
 
-#### Recommended (most systems, 16 GB RAM)
-
-For typical laptops and desktops with **~16 GB RAM**, use the **8B model**:
+##### Recommended (most systems, ~16 GB RAM)
 
 ```bash
 ollama pull llama3.1:8b
@@ -124,59 +131,98 @@ This model provides **sufficient reasoning quality for agentic scientific
 workflows** while remaining lightweight enough for local prototyping and
 proof-of-concept development.
 
----
-
-#### Optional (larger-memory systems)
+##### Optional (larger-memory systems)
 
 If your system has **≥32 GB RAM** or substantial GPU VRAM, you may use a larger
 variant for improved reasoning quality:
 
 ```bash
-ollama pull llama3.1:70b-instruct
+ollama pull llama3.1:70b
 ```
 
 > **Note:** The 70B model is significantly more resource-intensive and is not
 > required for Datathon-scale prototypes.
 
-#### Model selection
+---
 
-The active model can be configured in the LLM configuration
+### 4. Option B: Hosted LLM via LLNL LivAI (Optional)
+
+If you have access to an **LLNL LivAI API key**, you may use **hosted models** such as **Claude 3.5 Sonnet** or **GPT-4.1** instead of (or in addition to) local models.
+
+LivAI provides:
+
+- LLNL-approved provenance
+- No local hardware requirements
+- Access to higher-quality reasoning models
+
+To use LivAI:
+
+1. Obtain a LivAI API key
+2. Set `LLM_BACKEND=livai` in your `.env`
+3. Select a LivAI-supported model (e.g., `claude-3.5-sonnet`)
 
 ---
 
 ### 5. Configure Environment Variables
 
-1. Copy `.env.template` as `.env`
-2. Configure environment variables as needed, including LLM backend, model, and
-   temperature.
+1. Copy the template:
+
+   ```bash
+   cp .env.template .env
+   ```
+
+2. Edit `.env` to configure:
+
+   - LLM backend (`ollama` or `livai`)
+   - Model selection
+   - Temperature and token limits
+
+Example configurations:
+
+**Local (default):**
+
+```env
+LLM_BACKEND=ollama
+LLM_MODEL=llama3.1:8b
+```
+
+**LivAI (hosted):**
+
+```env
+LLM_BACKEND=livai
+LLM_MODEL=claude-3.5-sonnet
+LIVAI_API_KEY=your_key_here
+```
 
 ---
 
 ### 6. Quick Sanity Check
 
-From within the Conda environment:
+From within the Conda environment, verify that the unified LLM interface works:
 
 ```bash
 python - << EOF
-import ollama
-response = ollama.chat(
-    model="qwen2.5:14b",
-    messages=[{"role": "user", "content": "Hello"}],
-)
-print(response["message"]["content"])
+from llm import call_llm, system_message
+
+messages = [
+    system_message(),
+    {"role": "user", "content": "What is an Earth system model diagnostic?"}
+]
+
+result = call_llm(messages)
+print(result["content"])
 EOF
 ```
 
-If this succeeds, your setup is complete.
+If this prints a sensible response, your setup is complete.
 
 ---
 
 ### Notes
 
-- Ollama runs as a local HTTP service (default: `localhost:11434`)
-- Python code communicates with Ollama via its client library
-- Conda manages **Python packages only**
-- Ollama manages **models and inference**
+- Local **Ollama + LLaMA 3.1** is ideal for rapid iteration and offline work
+- **LivAI (Claude / GPT)** is recommended for final summaries and demos
+- The backend can be switched **without changing code**, only via `.env`
 
 This repository is designed for **prototyping and proof-of-concept work**, not
 production deployment.
