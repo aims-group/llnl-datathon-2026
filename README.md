@@ -73,14 +73,36 @@ python -c "import xarray, numpy; print('Python environment OK')"
 
 This project supports **two LLM backends**:
 
-- **Ollama (local)** — runs LLaMA 3.1 on your machine
 - **LivAI (hosted)** — LLNL-provided API access to Claude and GPT models
+- **Ollama (local)** — runs LLaMA 3.1 on your machine
 
 You may use **either or both**, configured via environment variables.
 
 ---
 
-### 3. Option A: Local LLM via Ollama (Default)
+### 3. Option A: Hosted LLM via LLNL LivAI
+
+If you have access to an **LLNL LivAI API key**, you may use **hosted models** such as **Claude 3.5 Sonnet** or **GPT-4.1** instead of (or in addition to) local models.
+
+LivAI provides:
+
+- LLNL-approved provenance
+- No local hardware requirements
+- Access to higher-quality reasoning models
+
+To use LivAI:
+
+1. Obtain a LivAI API key from the
+   [LLNL LivAI API key request page](https://llnl.servicenowservices.com/ess?id=kb_article_view&sysparm_article=KB0026324#a1)
+2. Set `LLM_BACKEND=livai` in your `.env`
+3. Select a LivAI-supported model, for example:
+
+   - `gpt-5` (recommended default for agentic workflows)
+   - `claude-sonnet-3.7` (strongest scientific reasoning and final summaries)
+   - `gpt-4.1` (long-context processing)
+   - `o4-mini` (fast, low-cost iteration)
+
+### 3. Option B: Local LLM via Ollama (Optional)
 
 Ollama is used as a **local LLM service** for agentic workflows.
 
@@ -145,25 +167,7 @@ ollama pull llama3.1:70b
 
 ---
 
-### 4. Option B: Hosted LLM via LLNL LivAI (Optional)
-
-If you have access to an **LLNL LivAI API key**, you may use **hosted models** such as **Claude 3.5 Sonnet** or **GPT-4.1** instead of (or in addition to) local models.
-
-LivAI provides:
-
-- LLNL-approved provenance
-- No local hardware requirements
-- Access to higher-quality reasoning models
-
-To use LivAI:
-
-1. Obtain a LivAI API key
-2. Set `LLM_BACKEND=livai` in your `.env`
-3. Select a LivAI-supported model (e.g., `claude-3.5-sonnet`)
-
----
-
-### 5. Configure Environment Variables
+### 4. Configure Environment Variables
 
 1. Copy the template:
 
@@ -196,7 +200,7 @@ LIVAI_API_KEY=your_key_here
 
 ---
 
-### 6. Quick Sanity Check
+### 5. Quick Sanity Check
 
 From within the Conda environment, verify that the unified LLM interface works:
 

@@ -10,16 +10,23 @@ PoC / prototyping version:
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
+from dotenv import load_dotenv
 from openai import OpenAI
+
+# -----------------------------------------------------------------------------
+# Load environment variables from .env
+# -----------------------------------------------------------------------------
+
+load_dotenv()
 
 # -----------------------------------------------------------------------------
 # Configuration via environment variables
 # -----------------------------------------------------------------------------
 # .env example:
 #   LLM_BACKEND=ollama            # "ollama" or "livai"
-#   LLM_MODEL=llama3.1:8b         # or "claude-3.5-sonnet", "gpt-4.1"
+#   LLM_MODEL=llama3.1:8b         # or "gpt-5", "claude-sonnet-3.7"
 #   LLM_TEMPERATURE=0.1
 #   LLM_MAX_TOKENS=2048
 #   OLLAMA_BASE_URL=http://localhost:11434/v1
@@ -94,7 +101,7 @@ Your role is planning, interpretation, and explanation.
 """
 
 
-def system_message() -> Dict[str, str]:
+def system_message() -> dict[str, str]:
     return {"role": "system", "content": SCIENTIFIC_AGENT_SYSTEM_PROMPT}
 
 
@@ -104,11 +111,11 @@ def system_message() -> Dict[str, str]:
 
 
 def call_llm(
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     model: Optional[str] = None,
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Standard LLM call wrapper.
 
@@ -121,12 +128,22 @@ def call_llm(
     chosen_temperature = DEFAULT_TEMPERATURE if temperature is None else temperature
     chosen_max_tokens = DEFAULT_MAX_TOKENS if max_tokens is None else max_tokens
 
-    response = _client.chat.completions.create(
+    request_kwargs = dict(
         model=chosen_model,
         messages=messages,
-        temperature=chosen_temperature,
         max_tokens=chosen_max_tokens,
     )
+
+    if chosen_model.startswith("gpt-5"):
+        # gpt-5 (LivAI / Azure) has restricted parameters:
+        # - no temperature control
+        # - no reasoning_effort='none'
+        # Rely on prompt instructions instead.
+        pass
+    else:
+        request_kwargs["temperature"] = chosen_temperature
+
+    response = _client.chat.completions.create(**request_kwargs)
 
     return {
         "content": response.choices[0].message.content,
