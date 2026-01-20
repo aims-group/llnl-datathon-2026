@@ -114,9 +114,10 @@ def summarize_bitinfo(bitinfo_ds) -> Dict:
     Summarize xbitinfo output from the python/plain implementation.
 
     This function:
-    - extracts bit-level metrics (e.g., significant_bits, entropy, information_content) if present
+    - extracts aggregate information-theoretic metrics (if present)
+    - does NOT assume per-bit resolution
     - works across xbitinfo versions
-    - reports only evidence that actually exists
+    - reports evidence only (no decisions)
     """
     summary = {
         "implementation": "python",
@@ -665,3 +666,32 @@ def print_before_after_comparison(
         print(f"  mean: {float(a.mean()):.6e} → {float(b.mean()):.6e}")
 
     print()
+
+
+def build_xbitinfo_candidate(ds, target_var, inflevel=0.99):
+    """
+    Build a single xbitinfo-based bitrounding candidate.
+    This is advisory and must be evaluated before acceptance.
+    """
+    print(f"Generating xbitinfo candidate for '{target_var}' with inflevel={inflevel}")
+
+    bitinfo = xb.get_bitinformation(
+        ds[[target_var]],
+        dim="time",
+        implementation="python",
+    )
+
+    keepbits = xb.get_keepbits(bitinfo, inflevel=inflevel)
+
+    # Apply bitrounding ONLY to the target variable
+    ds_candidate = ds.copy()
+    ds_candidate[target_var] = xb.xr_bitround(
+        ds_candidate[[target_var]],
+        keepbits,
+    )[target_var]
+
+    return ds_candidate, {
+        "description": f"xbitinfo bitround ({inflevel * 100:.1f}% information)",
+        "keepbits": keepbits,
+        "inflevel": inflevel,
+    }
