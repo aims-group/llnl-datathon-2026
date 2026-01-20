@@ -12,6 +12,7 @@ dependencies:
   # Data handling
   - netCDF4
   - xarray
+  - xbitinfo-python
   - xcdat>=0.11.1
   # Parallel and image processing
   - dask
