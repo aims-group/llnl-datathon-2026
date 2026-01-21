@@ -59,9 +59,11 @@ def _make_client() -> OpenAI:
 
 
 client = _make_client()
-
-
-print(
-    f"[LLM] backend={LLM_BACKEND}, model={DEFAULT_MODEL}, "
-    f"temp={DEFAULT_TEMPERATURE}, max_tokens={DEFAULT_MAX_TOKENS}"
-)
+print("\n" + "=" * 60)
+print("  LLM Configuration")
+print("=" * 60)
+print(f"  Backend      : {LLM_BACKEND}")
+print(f"  Model        : {DEFAULT_MODEL}")
+print(f"  Temperature  : {DEFAULT_TEMPERATURE}")
+print(f"  Max Tokens   : {DEFAULT_MAX_TOKENS}")
+print("=" * 60 + "\n")

@@ -21,12 +21,12 @@ from agentic.workflows.compression import (
 # See: https://github.com/xCDAT/xcdat/blob/main/xcdat/tutorial.py
 # Map each dataset key to its target variable for xcdat-data
 DATASET_VARIABLES = [
-    # ("pr_amon_access", "pr"),
-    # ("tas_amon_access", "tas"),
-    # ("tas_3hr_access", "tas"),
-    # ("tas_amon_canesm5", "tas"),
-    # ("so_omon_cesm2", "so"),
-    # ("thetao_omon_cesm2", "thetao"),
+    ("pr_amon_access", "pr"),
+    ("tas_amon_access", "tas"),
+    ("tas_3hr_access", "tas"),
+    ("tas_amon_canesm5", "tas"),
+    ("so_omon_cesm2", "so"),
+    ("thetao_omon_cesm2", "thetao"),
     ("cl_amon_e3sm2", "cl"),
     ("ta_amon_e3sm2", "ta"),
 ]

@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
@@ -11,7 +12,39 @@ from xcdat.tutorial import open_dataset
 from agentic.llm import call_llm, system_message
 
 
-def inspect_dataset(ds: xr.Dataset) -> Dict:
+def inspect_dataset(ds: xr.Dataset) -> dict:
+    """
+    Inspect an xarray Dataset and summarize its variables and coordinates.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        The xarray Dataset to inspect.
+
+    Returns
+    -------
+    dict
+        A dictionary summarizing each variable in the dataset, including:
+            - dims: tuple of dimension names
+            - shape: tuple of dimension sizes
+            - dtype: data type of the variable
+            - size_mb: size of the variable in megabytes
+            - min: minimum value (if numeric)
+            - max: maximum value (if numeric)
+            - missing: number of missing (NaN) values (if floating point)
+            - coords: list of coordinate names
+            - temporal_resolution_days: mean temporal resolution in days (if applicable)
+            - <dim>_resolution_days: mean resolution in days for time-like dimensions (if applicable)
+            - <dim>_resolution: mean resolution for numeric dimensions (if applicable)
+            - bitinfo: summary of bit information or error/skipped status
+        Also includes a "coordinates" entry summarizing each coordinate variable:
+            - dims: tuple of dimension names
+            - shape: tuple of dimension sizes
+            - dtype: data type of the coordinate
+            - min: minimum value (if numeric)
+            - max: maximum value (if numeric)
+    """
+
     summary = {}
 
     for var in ds.data_vars:
@@ -722,11 +755,6 @@ def print_before_after_comparison(
     compressed_path: str,
     variable: str,
 ) -> None:
-    import os
-    import xarray as xr
-    import numpy as np
-from datetime import datetime
-
     print("\n=== BEFORE / AFTER COMPARISON ===")
 
     # ------------------------------------------------------------------
