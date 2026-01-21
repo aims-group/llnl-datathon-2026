@@ -1,18 +1,15 @@
 import json
 import os
-from datetime import datetime
-from pathlib import Path
 from typing import Dict
 
 import numpy as np
 import xarray as xr
 from xbitinfo import get_bitinformation
-from xcdat.tutorial import open_dataset
 
 from agentic.llm import call_llm, system_message
 
 
-def inspect_dataset(ds: xr.Dataset) -> dict:
+def _inspect_dataset(ds: xr.Dataset) -> dict:
     """
     Inspect an xarray Dataset and summarize its variables and coordinates.
 
@@ -139,6 +136,7 @@ def analyze_bitinfo(ds: xr.Dataset, var: str):
         dim="time",  # or appropriate dimension
         implementation="python",
     )
+
     return info
 
 
@@ -182,7 +180,7 @@ def summarize_bitinfo(bitinfo_ds) -> Dict:
     return summary
 
 
-def propose_compression_plan(summary: dict) -> dict:
+def _propose_compression_plan(summary: dict) -> dict:
     """
     Propose a compression plan by classifying variables into categories.
 
@@ -254,7 +252,7 @@ def propose_compression_plan(summary: dict) -> dict:
     return json.loads(result["content"])
 
 
-def explain_compression_strategy(summary: dict) -> str:
+def _explain_compression_plan(summary: dict) -> str:
     """
     Generate a conservative compression strategy for scientific Earth system
     model data.
@@ -315,7 +313,7 @@ def explain_compression_strategy(summary: dict) -> str:
     return result["content"]
 
 
-def build_encoding_from_plan(ds: xr.Dataset, plan: dict) -> dict:
+def _build_encoding_from_plan(ds: xr.Dataset, plan: dict) -> dict:
     """Build a NetCDF encoding dictionary from a compression plan.
 
     This function generates an encoding dictionary suitable for use with xarray's
@@ -549,9 +547,54 @@ def print_compression_report_summary(summary: dict) -> None:
         print(f" - {s}")
 
 
-def evaluate(
+def _evaluate_and_accept_plan(
+    original_path,
+    compressed_path,
+    dataset,
+    variable,
+    thresholds,
+    candidate_desc,
+    encoding,
+    output_json,
+    print_agent_opinion=False,
+) -> bool:
+    evaluation = _evaluate_plan(
+        original_path, compressed_path, dataset, variable, thresholds
+    )
+
+    _print_plan_evaluation(evaluation)
+    _print_before_after_comparison(original_path, compressed_path, variable)
+
+    agent_opinion = _agent_assess_plan(
+        candidate=candidate_desc,
+        evaluation=evaluation,
+    )
+
+    if print_agent_opinion:
+        print("\n=== AGENT ASSESSMENT ===")
+        print(agent_opinion["agent_opinion"])
+        print()
+
+    if evaluation["verdict"] == "safe":
+        print(
+            f"Decision trace: metrics → SAFE → accept {candidate_desc['description']}"
+        )
+        _accept_plan(
+            encoding=encoding,
+            evaluation=evaluation,
+            agent_opinion=agent_opinion,
+            output_json=output_json,
+        )
+
+        return True
+
+    return False
+
+
+def _evaluate_plan(
     original_path: str,
     compressed_path: str,
+    dataset: str,
     variable: str,
     thresholds: Dict[str, float],
 ) -> Dict:
@@ -613,6 +656,7 @@ def evaluate(
         verdict = "unsafe"
 
     return {
+        "dataset": dataset,
         "variable": variable,
         "metrics": metrics,
         "thresholds": thresholds,
@@ -620,117 +664,7 @@ def evaluate(
     }
 
 
-def accept(
-    encoding: Dict,
-    evaluation: Dict,
-    agent_opinion: Dict | None = None,
-    output_dir: str = "outputs/compression",
-):
-    """
-    Accept a compression strategy and persist the decision.
-
-    This is the point where the agent's recommendation
-    becomes an artifact.
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    artifact = {
-        "accepted": True,
-        "variable": evaluation["variable"],
-        "numeric_verdict": evaluation["verdict"],
-        "metrics": evaluation["metrics"],
-        "thresholds": evaluation["thresholds"],
-        "encoding": encoding,
-    }
-
-    if agent_opinion is not None:
-        artifact["agent_opinion"] = agent_opinion
-
-    with open(output_path / f"accepted_compression_{timestamp}.json", "w") as f:
-        json.dump(artifact, f, indent=2)
-
-    return artifact
-
-
-def agent_assess(candidate: Dict, evaluation: Dict) -> Dict:
-    """
-    Ask the agent to assess a compression candidate given evaluation metrics.
-
-    Returns an advisory opinion (not authoritative).
-    """
-    messages = [
-        system_message(),
-        {
-            "role": "user",
-            "content": f"""
-Compression candidate:
-{candidate}
-
-Evaluation results:
-{evaluation}
-
-Assess whether this compression strategy is scientifically acceptable.
-Explain reasoning and potential risks.
-
-Do NOT override numerical thresholds.
-""",
-        },
-    ]
-
-    response = call_llm(messages)
-
-    return {
-        "candidate_description": candidate.get("description", "<unknown>"),
-        "agent_opinion": response["content"],
-    }
-
-
-def fallback_result(variable: str) -> Dict:
-    """
-    Result used when no candidate passes evaluation.
-    """
-    return {
-        "variable": variable,
-        "verdict": "safe",
-        "metrics": {
-            "rmse": 0.0,
-            "max_abs": 0.0,
-            "mean_abs": 0.0,
-        },
-        "note": "Fallback to lossless compression",
-    }
-
-
-def lossless_encoding(ds: xr.Dataset) -> Dict:
-    """
-    Conservative lossless encoding for all variables.
-    """
-    encoding = {}
-    for var in ds.data_vars:
-        encoding[var] = {
-            "zlib": True,
-            "complevel": 4,
-        }
-    return encoding
-
-
-def write_compressed(
-    ds: xr.Dataset,
-    encoding: Dict,
-    output_path: str,
-):
-    """
-    Write a compressed NetCDF file using a provided encoding dict.
-    """
-    ds.to_netcdf(
-        output_path,
-        encoding=encoding,
-    )
-
-
-def print_evaluation(evaluation: dict) -> None:
+def _print_plan_evaluation(evaluation: dict) -> None:
     """
     Pretty-print the evaluation results to the console.
     """
@@ -750,7 +684,7 @@ def print_evaluation(evaluation: dict) -> None:
     print()
 
 
-def print_before_after_comparison(
+def _print_before_after_comparison(
     original_path: str,
     compressed_path: str,
     variable: str,
@@ -763,7 +697,7 @@ def print_before_after_comparison(
     orig_size = os.path.getsize(original_path) / 1e6
     comp_size = os.path.getsize(compressed_path) / 1e6
 
-    print(f"File size:")
+    print("File size:")
     print(f"  Original:   {orig_size:.2f} MB")
     print(f"  Compressed: {comp_size:.2f} MB")
     print(f"  Reduction:  {100.0 * (1.0 - comp_size / orig_size):.1f}%")
@@ -795,30 +729,110 @@ def print_before_after_comparison(
     print()
 
 
-def build_xbitinfo_candidate(ds, target_var, inflevel=0.99):
+def _accept_plan(
+    encoding: Dict,
+    evaluation: Dict,
+    output_json: str,
+    agent_opinion: Dict | None = None,
+):
     """
-    Build a single xbitinfo-based bitrounding candidate.
-    This is advisory and must be evaluated before acceptance.
+    Accept a compression strategy and persist the decision.
+
+    This is the point where the agent's recommendation
+    becomes an artifact.
     """
-    print(f"Generating xbitinfo candidate for '{target_var}' with inflevel={inflevel}")
-
-    bitinfo = xb.get_bitinformation(
-        ds[[target_var]],
-        dim="time",
-        implementation="python",
-    )
-
-    keepbits = xb.get_keepbits(bitinfo, inflevel=inflevel)
-
-    # Apply bitrounding ONLY to the target variable
-    ds_candidate = ds.copy()
-    ds_candidate[target_var] = xb.xr_bitround(
-        ds_candidate[[target_var]],
-        keepbits,
-    )[target_var]
-
-    return ds_candidate, {
-        "description": f"xbitinfo bitround ({inflevel * 100:.1f}% information)",
-        "keepbits": keepbits,
-        "inflevel": inflevel,
+    artifact = {
+        "accepted": True,
+        "variable": evaluation["variable"],
+        "numeric_verdict": evaluation["verdict"],
+        "metrics": evaluation["metrics"],
+        "thresholds": evaluation["thresholds"],
+        "encoding": encoding,
     }
+
+    if agent_opinion is not None:
+        artifact["agent_opinion"] = agent_opinion
+
+    if not os.path.exists(output_json):
+        with open(output_json, "w") as f:
+            json.dump([artifact], f, indent=2)
+    else:
+        with open(output_json, "r") as f:
+            try:
+                existing = json.load(f)
+                if not isinstance(existing, list):
+                    existing = [existing]
+            except Exception:
+                existing = []
+
+        existing.append(artifact)
+
+        with open(output_json, "w") as f:
+            json.dump(existing, f, indent=2)
+
+    return artifact
+
+
+def _agent_assess_plan(candidate: Dict, evaluation: Dict) -> Dict:
+    """
+    Ask the agent to assess a compression candidate given evaluation metrics.
+
+    Returns an advisory opinion (not authoritative).
+    """
+    messages = [
+        system_message(),
+        {
+            "role": "user",
+            "content": f"""
+                Compression candidate:
+                {candidate}
+
+                Evaluation results:
+                {evaluation}
+
+                Assess whether this compression strategy is scientifically acceptable.
+                Explain reasoning and potential risks.
+
+                Do NOT override numerical thresholds.
+                """,
+        },
+    ]
+
+    response = call_llm(messages)
+
+    return {
+        "candidate_description": candidate.get("description", "<unknown>"),
+        "agent_opinion": response["content"],
+    }
+
+
+def _fallback_result(dataset: str, variable: str) -> Dict:
+    """
+    Result used when no candidate passes evaluation.
+    """
+    return {
+        "dataset": dataset,
+        "variable": variable,
+        "verdict": "safe",
+        "metrics": {
+            "rmse": 0.0,
+            "max_abs": 0.0,
+            "mean_abs": 0.0,
+        },
+        "note": "Fallback to lossless compression",
+    }
+
+
+def _lossless_encoding(ds: xr.Dataset) -> Dict:
+    """
+    Conservative lossless encoding for all variables.
+    """
+    encoding = {}
+
+    for var in ds.data_vars:
+        encoding[var] = {
+            "zlib": True,
+            "complevel": 4,
+        }
+
+    return encoding

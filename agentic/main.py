@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import xbitinfo as xb
@@ -5,17 +6,13 @@ from xcdat.tutorial import open_dataset
 import xarray as xr
 
 from agentic.workflows.compression import (
-    accept,
-    agent_assess,
-    build_encoding_from_plan,
-    evaluate,
-    fallback_result,
-    inspect_dataset,
-    lossless_encoding,
-    print_before_after_comparison,
-    print_evaluation,
-    propose_compression_plan,
-    write_compressed,
+    _accept_plan,
+    _evaluate_and_accept_plan,
+    _build_encoding_from_plan,
+    _fallback_result,
+    _inspect_dataset,
+    _lossless_encoding,
+    _propose_compression_plan,
 )
 
 # Use xcdat.tutorial.open_dataset for example datasets
@@ -59,10 +56,14 @@ DATASET_MAP = {
     },
 }
 
+
 INPUT_DIR = Path("data/input/")
-WORK_DIR = Path("data/output/")
+OUTPUT_DIR = Path("data/output/")
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
-WORK_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+OUTPUT_ACCEPTANCE_JSON = OUTPUT_DIR / f"acceptance_summary_{TIMESTAMP}.json"
 
 # Relative error thresholds for compression safety.
 # These values are conservative defaults for climate modeling data:
@@ -86,59 +87,67 @@ def main(use_subset: bool = True) -> None:
 
     summary_results = []
 
-    for dataset_name, info in DATASET_MAP.items():
-        var = info["var_name"]
-        filepath = info.get("filepath")
+    if use_subset:
+        print("🧪 Using subset datasets from xcdat.tutorial for testing.\n")
+    else:
+        print("📂 Using full datasets from specified filepaths.\n")
+        print("🔎 Checking that all dataset filepaths are valid...\n")
+        _check_valid_filepaths(DATASET_MAP)
 
-        print(f"\n=== Dataset: {dataset_name} | Variable: {var} ===")
+    for dataset_key, dataset_info in DATASET_MAP.items():
+        var = dataset_info["var_name"]
+        filename = dataset_info.get("filepath")
 
+        print(f"\n=== Dataset: {dataset_key} | Variable: {var} ===")
+
+        # 1. Open the input dataset
+        # -----------------------------
         if use_subset:
-            ds = open_dataset(dataset_name)
-        elif filepath:
+            filename = f"{filename.replace('.nc', '_subset.nc')}"
+            input_path = INPUT_DIR / filename
+
             try:
-                ds = xr.open_dataset(filepath)
-            except FileNotFoundError as e:
-                raise FileNotFoundError(
-                    f"File {filepath} for dataset {dataset_name} not found."
-                ) from e
+                ds = xr.open_dataset(input_path)
+            except FileNotFoundError:
+                ds = open_dataset(dataset_key)
+                ds.to_netcdf(input_path)
         else:
-            raise ValueError(
-                f"Dataset {dataset_name} requires a 'filepath' when use_dummy_data=False"
-            )
+            input_path = INPUT_DIR / filename
+            ds = xr.open_dataset(filename)
 
-        input_path = INPUT_DIR / f"{dataset_name}_{var}.nc"
-        ds.to_netcdf(input_path)
-
+        # 2. Inspect the dataset and request a compression plan from the agent
+        # ---------------------------------------------------------------------
         print("Inspecting dataset...")
-        summary = inspect_dataset(ds)
+        summary = _inspect_dataset(ds)
 
         print("Requesting compression plan from agent...")
-        plan = propose_compression_plan(summary)
+        plan = _propose_compression_plan(summary)
         print(plan)
 
+        # 3. Attempt compression according to the plan and evaluate
+        # --------------------------------------------------------------
         accepted = False
         candidate_used = None
-        compressed_path = None
-        keepbits = None
-        encoding_used = None
 
         # --- Candidate 1: plan-based compression ---
         print("\n--- Candidate 1: plan-based compression ---")
-        encoding = build_encoding_from_plan(ds, plan)
-        compressed_path = WORK_DIR / f"compressed_plan_{dataset_name}_{var}.nc"
-        write_compressed(ds, encoding, str(compressed_path))
+        encoding = _build_encoding_from_plan(ds, plan)
+        compressed_path = OUTPUT_DIR / f"compressed_plan_{filename}.nc"
+        ds.to_netcdf(str(compressed_path), encoding=encoding)
 
-        accepted = _evaluate_and_accept_candidate(
+        accepted = _evaluate_and_accept_plan(
             original_path=input_path,
             compressed_path=str(compressed_path),
+            dataset=filename,
             variable=var,
             thresholds=SAFETY_THRESHOLDS,
             candidate_desc={"description": "plan-based compression"},
+            output_json=OUTPUT_ACCEPTANCE_JSON,
             encoding=encoding,
         )
+
         if accepted:
             candidate_used = "plan-based compression"
-            encoding_used = encoding
 
         # --- Candidate 2: xbitinfo bitround (only if needed) ---
         if not accepted:
@@ -152,44 +161,46 @@ def main(use_subset: bool = True) -> None:
             print(f"xbitinfo keepbits for {var}: {keepbits}")
             ds_bitrounded = ds.copy()
             ds_bitrounded[var] = xb.xr_bitround(ds_bitrounded[[var]], keepbits)[var]
-            compressed_path = WORK_DIR / f"compressed_xbitinfo_{dataset_name}_{var}.nc"
+            compressed_path = OUTPUT_DIR / f"compressed_xbitinfo_{dataset_key}_{var}.nc"
             ds_bitrounded.to_netcdf(compressed_path)
 
-            encoding2 = {
+            encoding = {
                 var: {
                     "dtype": ds[var].dtype,
                     "bit_rounding": int(keepbits),
                 }
             }
-            accepted = _evaluate_and_accept_candidate(
+            accepted = _evaluate_and_accept_plan(
                 original_path=input_path,
                 compressed_path=compressed_path,
+                dataset=filename,
                 variable=var,
                 thresholds=SAFETY_THRESHOLDS,
                 candidate_desc={
                     "description": f"xbitinfo bitround with keepbits={keepbits}"
                 },
-                encoding=encoding2,
+                output_json=OUTPUT_ACCEPTANCE_JSON,
+                encoding=encoding,
             )
 
             if accepted:
                 candidate_used = f"xbitinfo bitround (keepbits={keepbits})"
-                encoding_used = encoding2
 
         # --- Fallback: lossless compression (safety net) ---
         if not accepted:
             print(
-                "\nNo candidate met safety thresholds. "
-                "Falling back to lossless compression."
+                "\nNo candidate met safety thresholds. Falling back to lossless "
+                "compression."
             )
-            encoding3 = lossless_encoding(ds)
-            accept(
-                encoding=encoding3,
-                evaluation=fallback_result(var),
+
+            encoding = _lossless_encoding(ds)
+            _accept_plan(
+                encoding=encoding,
+                evaluation=_fallback_result(filename, var),
+                output_json=OUTPUT_ACCEPTANCE_JSON,
                 agent_opinion=None,
             )
             candidate_used = "lossless compression"
-            encoding_used = encoding3
 
         # Collect summary info for this variable
         orig_size_mb = input_path.stat().st_size / (1024 * 1024)
@@ -200,11 +211,11 @@ def main(use_subset: bool = True) -> None:
         )
         summary_results.append(
             {
-                "dataset": dataset_name,
+                "dataset": dataset_key,
                 "variable": var,
                 "plan": plan,
                 "candidate": candidate_used,
-                "encoding": encoding_used,
+                "encoding": encoding,
                 "original_size_mb": orig_size_mb,
                 "compressed_size_mb": comp_size_mb,
             }
@@ -212,6 +223,16 @@ def main(use_subset: bool = True) -> None:
 
     print("=== Batch Compression Agent Finished ===")
     _print_batch_summary(summary_results)
+
+
+def _check_valid_filepaths(dataset_map: dict[str, dict[str, str]]) -> None:
+    for dataset_name, info in dataset_map.items():
+        filename = info.get("filepath")
+
+        if not filename or not Path(filename).exists():
+            raise ValueError(
+                f"Dataset {dataset_name} requires a valid 'filepath' when use_subset=False"
+            )
 
 
 def _print_batch_summary(summary_results):
@@ -237,46 +258,5 @@ def _print_batch_summary(summary_results):
         print()
 
 
-def _evaluate_and_accept_candidate(
-    original_path,
-    compressed_path,
-    variable,
-    thresholds,
-    candidate_desc,
-    encoding,
-    print_agent_opinion=False,
-) -> bool:
-    evaluation = evaluate(
-        original_path=original_path,
-        compressed_path=compressed_path,
-        variable=variable,
-        thresholds=thresholds,
-    )
-
-    print_evaluation(evaluation)
-    print_before_after_comparison(original_path, compressed_path, variable)
-
-    agent_opinion = agent_assess(
-        candidate=candidate_desc,
-        evaluation=evaluation,
-    )
-
-    if print_agent_opinion:
-        print("\n=== AGENT ASSESSMENT ===")
-        print(agent_opinion["agent_opinion"])
-        print()
-
-    if evaluation["verdict"] == "safe":
-        print(
-            f"Decision trace: metrics → SAFE → accept {candidate_desc['description']}"
-        )
-        accept(encoding=encoding, evaluation=evaluation, agent_opinion=agent_opinion)
-
-        return True
-
-    return False
-
-
 if __name__ == "__main__":
-    # Example: pass a custom dataset map, else use default
     main()
