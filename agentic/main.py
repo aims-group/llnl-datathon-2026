@@ -2,6 +2,7 @@ from pathlib import Path
 
 import xbitinfo as xb
 from xcdat.tutorial import open_dataset
+import xarray as xr
 
 from agentic.workflows.compression import (
     accept,
@@ -19,17 +20,44 @@ from agentic.workflows.compression import (
 
 # Use xcdat.tutorial.open_dataset for example datasets
 # See: https://github.com/xCDAT/xcdat/blob/main/xcdat/tutorial.py
-# Map each dataset key to its target variable for xcdat-data
-DATASET_VARIABLES = [
-    ("pr_amon_access", "pr"),
-    ("tas_amon_access", "tas"),
-    ("tas_3hr_access", "tas"),
-    ("tas_amon_canesm5", "tas"),
-    ("so_omon_cesm2", "so"),
-    ("thetao_omon_cesm2", "thetao"),
-    ("cl_amon_e3sm2", "cl"),
-    ("ta_amon_e3sm2", "ta"),
-]
+
+# Default dataset-variable map. Filepath indicates the full path to the NetCDF file.
+# The user can pass use_subset to use xcdat tutorial datasets instead, which
+# are smaller subsets suitable for testing.
+DATASET_MAP = {
+    "pr_amon_access": {
+        "var_name": "pr",
+        "filepath": "pr_Amon_ACCESS-ESM1-5_historical_r10i1p1f1_gn_185001-201412.nc",
+    },
+    "tas_amon_access": {
+        "var_name": "tas",
+        "filepath": "tas_Amon_ACCESS-ESM1-5_historical_r10i1p1f1_gn_185001-201412.nc",
+    },
+    "tas_3hr_access": {
+        "var_name": "tas",
+        "filepath": "tas_3hr_ACCESS-ESM1-5_historical_r10i1p1f1_gn_201001010300-201501010000.nc",
+    },
+    "tas_amon_canesm5": {
+        "var_name": "tas",
+        "filepath": "tas_Amon_CanESM5_historical_r13i1p1f1_gn_185001-201412.nc",
+    },
+    "so_omon_cesm2": {
+        "var_name": "so",
+        "filepath": "so_Omon_CESM2_historical_r1i1p1f1_gn_185001-201412.nc",
+    },
+    "thetao_omon_cesm2": {
+        "var_name": "thetao",
+        "filepath": "thetao_Omon_CESM2_historical_r1i1p1f1_gn_185001-201412.nc",
+    },
+    "cl_amon_e3sm2": {
+        "var_name": "cl",
+        "filepath": "cl_Amon_E3SM-2-0_historical_r1i1p1f1_gr_185001-189912.nc",
+    },
+    "ta_amon_e3sm2": {
+        "var_name": "ta",
+        "filepath": "ta_Amon_E3SM-2-0_historical_r1i1p1f1_gr_185001-189912.nc",
+    },
+}
 
 INPUT_DIR = Path("data/input/")
 WORK_DIR = Path("data/output/")
@@ -53,15 +81,31 @@ SAFETY_THRESHOLDS = {
 # -----------------------------------------------------------------------------
 
 
-def main() -> None:
+def main(use_subset: bool = True) -> None:
     print("=== Compression agent starting ===")
 
     summary_results = []
 
-    for dataset_name, var in DATASET_VARIABLES:
+    for dataset_name, info in DATASET_MAP.items():
+        var = info["var_name"]
+        filepath = info.get("filepath")
+
         print(f"\n=== Dataset: {dataset_name} | Variable: {var} ===")
 
-        ds = open_dataset(dataset_name)
+        if use_subset:
+            ds = open_dataset(dataset_name)
+        elif filepath:
+            try:
+                ds = xr.open_dataset(filepath)
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    f"File {filepath} for dataset {dataset_name} not found."
+                ) from e
+        else:
+            raise ValueError(
+                f"Dataset {dataset_name} requires a 'filepath' when use_dummy_data=False"
+            )
+
         input_path = INPUT_DIR / f"{dataset_name}_{var}.nc"
         ds.to_netcdf(input_path)
 
@@ -234,4 +278,5 @@ def _evaluate_and_accept_candidate(
 
 
 if __name__ == "__main__":
+    # Example: pass a custom dataset map, else use default
     main()
