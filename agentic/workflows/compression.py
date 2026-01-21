@@ -149,7 +149,45 @@ def summarize_bitinfo(bitinfo_ds) -> Dict:
     return summary
 
 
-def propose_compression_plan(summary: Dict) -> Dict:
+def propose_compression_plan(summary: dict) -> dict:
+    """
+    Propose a compression plan by classifying variables into categories.
+
+    Classification meanings:
+        - state: Core/prognostic model variables that represent the evolving
+        physical state (e.g., temperature, pressure). These require high
+        precision and should be protected from lossy compression.
+        - diagnostic: Derived or secondary variables, often used for analysis or
+        visualization (e.g., cloud fraction, energy fluxes). Medium precision is
+        acceptable; moderate compression can be considered.
+        - index: Coordinate, label, or integer-like variables (e.g., time,
+        latitude, longitude, bounds). Low precision is acceptable; these can be
+        aggressively compressed or quantized.
+
+    This classification guides the agent in selecting appropriate compression
+    strategies for each variable, balancing file size reduction and scientific
+    fidelity.
+
+    Parameters
+    ----------
+    summary : dict
+        Summary of the NetCDF dataset, including variable metadata and
+        statistics.
+
+    Returns
+    -------
+    dict
+        Compression plan with variable classifications and notes. Example
+        schema:
+        {
+            "variable_classes": {
+                "<var_name>": "state" | "diagnostic" | "index"
+            },
+            "notes": "<brief explanation of assumptions>"
+        }
+
+
+    """
     content = f"""
         Given the following NetCDF dataset summary:
 
@@ -183,7 +221,32 @@ def propose_compression_plan(summary: Dict) -> Dict:
     return json.loads(result["content"])
 
 
-def explain_compression_strategy(summary: Dict) -> str:
+def explain_compression_strategy(summary: dict) -> str:
+    """
+    Generate a conservative compression strategy for scientific Earth system
+    model data.
+
+    Given a summary of a NetCDF dataset, this function proposes a compression
+    strategy tailored for scientific data. It provides recommendations for each
+    variable type, including chunking approach, compression settings, and any
+    suggested precision changes.
+
+    The function also explains the tradeoffs and assumptions behind the
+    recommendations.
+
+    Parameters
+    ----------
+    summary : dict
+        A summary of the NetCDF dataset, typically including variable types,
+        dimensions, and other relevant metadata.
+
+    Returns
+    -------
+    str
+        A detailed explanation of the recommended compression strategy, including
+        chunking, compression, and precision guidance for each variable type,
+        along with tradeoffs and assumptions.
+    """
     content = f"""
         Given the following NetCDF dataset summary:
 
@@ -219,15 +282,41 @@ def explain_compression_strategy(summary: Dict) -> str:
     return result["content"]
 
 
-def build_encoding_from_plan(ds, plan):
-    """
-    Build a NetCDF encoding dictionary from a compression plan.
+def build_encoding_from_plan(ds: xr.Dataset, plan: dict) -> dict:
+    """Build a NetCDF encoding dictionary from a compression plan.
 
-    Design principles:
-    - Conservative by default (lossless)
-    - Deterministic and auditable
-    - Lossy compression only applied if explicitly allowed by plan
-    - Coordinate / bounds variables are always protected
+    This function generates an encoding dictionary suitable for use with xarray's
+    `to_netcdf` method, based on a provided compression plan. The plan can specify
+    variable classes and agent-approved compression choices for each variable.
+    The function applies conservative, lossless compression by default, and only
+    applies lossy compression if explicitly allowed in the plan. Coordinate and
+    bounds variables are always protected from lossy or unsafe compression.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        The xarray Dataset containing the variables to encode.
+    plan : dict
+        A dictionary specifying compression options. Keys may include:
+            - "variable_classes": dict mapping variable names to classes
+                (e.g., "state", "diagnostic", "index").
+            - "compression_choices": dict mapping variable names to compression
+                choices, each of which is a dict with a "mode" key and optional
+                parameters (e.g., "scale_factor", "add_offset").
+
+    Returns
+    -------
+    encoding : dict
+        A dictionary mapping variable names to encoding options suitable for
+        xarray's `to_netcdf` method.
+
+    Notes
+    -----
+    - By default, applies zlib compression with complevel 4.
+    - Lossy compression (e.g., quantization) is only applied if explicitly
+        specified in the plan.
+    - Coordinate and bounds variables are always encoded losslessly.
+    - The function is designed to be deterministic and auditable.
     """
     encoding = {}
 
@@ -274,10 +363,8 @@ def build_encoding_from_plan(ds, plan):
                             "add_offset": choice["add_offset"],
                         }
                     )
-                # else: silently fall back to lossless
-
             elif mode == "lossless":
-                pass  # already default
+                pass
 
         # ------------------------------------------------------------------
         # Conservative class-based rules (current behavior)
@@ -440,9 +527,9 @@ def evaluate(
 
     thresholds example:
     {
-        "rmse": 0.05,
-        "max_abs": 0.2,
-        "mean_abs": 0.02,
+        "rmse_rel": 0.001,
+        "max_abs_rel": 0.005,
+        "mean_abs_rel": 0.0005,
     }
     """
     ds_orig = xr.open_dataset(original_path)
@@ -453,31 +540,41 @@ def evaluate(
 
     if da0.shape != da1.shape:
         raise ValueError(
-            f"Shape mismatch for variable '{variable}': {a.shape} vs {b.shape}"
+            f"Shape mismatch for variable '{variable}': {da0.shape} vs {da1.shape}"
         )
 
     diff = da0 - da1
 
+    # Compute value range for relative error normalization
+    val_range = float(da0.max() - da0.min())
+    if val_range == 0:
+        val_range = 1.0  # Avoid division by zero; treat as constant field
+
     rmse = float(np.sqrt((diff**2).mean()))
+    rmse_rel = rmse / val_range
+
     max_abs = float(np.abs(diff).max())
+    max_abs_rel = max_abs / val_range
+
     mean_abs = float(np.abs(diff).mean())
+    mean_abs_rel = mean_abs / val_range
 
     metrics = {
-        "rmse": rmse,
-        "max_abs": max_abs,
-        "mean_abs": mean_abs,
+        "rmse_rel": rmse_rel,
+        "max_abs_rel": max_abs_rel,
+        "mean_abs_rel": mean_abs_rel,
     }
 
     # ------------------------------------------------------------
     # Verdict logic (deterministic, auditable)
     # ------------------------------------------------------------
     if (
-        rmse <= thresholds["rmse"]
-        and max_abs <= thresholds["max_abs"]
-        and mean_abs <= thresholds["mean_abs"]
+        rmse_rel <= thresholds["rmse_rel"]
+        and max_abs_rel <= thresholds["max_abs_rel"]
+        and mean_abs_rel <= thresholds["mean_abs_rel"]
     ):
         verdict = "safe"
-    elif rmse <= 2 * thresholds["rmse"]:
+    elif rmse_rel <= 2 * thresholds["rmse_rel"]:
         verdict = "caution"
     else:
         verdict = "unsafe"
@@ -502,6 +599,7 @@ def accept(
     This is the point where the agent's recommendation
     becomes an artifact.
     """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -517,7 +615,7 @@ def accept(
     if agent_opinion is not None:
         artifact["agent_opinion"] = agent_opinion
 
-    with open(output_path / "accepted_compression.json", "w") as f:
+    with open(output_path / f"accepted_compression_{timestamp}.json", "w") as f:
         json.dump(artifact, f, indent=2)
 
     return artifact
@@ -627,6 +725,7 @@ def print_before_after_comparison(
     import os
     import xarray as xr
     import numpy as np
+from datetime import datetime
 
     print("\n=== BEFORE / AFTER COMPARISON ===")
 
