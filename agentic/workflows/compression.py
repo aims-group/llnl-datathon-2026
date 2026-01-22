@@ -4,178 +4,68 @@ from typing import Dict
 
 import numpy as np
 import xarray as xr
-from xbitinfo import get_bitinformation
+
 
 from agentic.llm import call_llm, system_message
+from xcdat.temporal import _infer_freq
 
 
 def _inspect_dataset(ds: xr.Dataset) -> dict:
     """
-    Inspect an xarray Dataset and summarize its variables and coordinates.
+    Inspect an xarray Dataset and return a lightweight, metadata-only summary.
 
-    Parameters
-    ----------
-    ds : xr.Dataset
-        The xarray Dataset to inspect.
+    This function is intentionally cheap:
+    - No data variable values are loaded
+    - No full-array statistics are computed
+    - Time frequency is inferred from coordinates only (best-effort)
 
     Returns
     -------
     dict
-        A dictionary summarizing each variable in the dataset, including:
-            - dims: tuple of dimension names
-            - shape: tuple of dimension sizes
-            - dtype: data type of the variable
-            - size_mb: size of the variable in megabytes
-            - min: minimum value (if numeric)
-            - max: maximum value (if numeric)
-            - missing: number of missing (NaN) values (if floating point)
-            - coords: list of coordinate names
-            - temporal_resolution_days: mean temporal resolution in days (if applicable)
-            - <dim>_resolution_days: mean resolution in days for time-like dimensions (if applicable)
-            - <dim>_resolution: mean resolution for numeric dimensions (if applicable)
-            - bitinfo: summary of bit information or error/skipped status
-        Also includes a "coordinates" entry summarizing each coordinate variable:
-            - dims: tuple of dimension names
-            - shape: tuple of dimension sizes
-            - dtype: data type of the coordinate
-            - min: minimum value (if numeric)
-            - max: maximum value (if numeric)
+        Dataset summary suitable for agent reasoning and planning.
     """
+    summary: dict = {}
 
-    summary = {}
+    # ------------------------------------------------------------------
+    # Global structure
+    # ------------------------------------------------------------------
+    summary["dimensions"] = dict(ds.sizes)
 
-    for var in ds.data_vars:
-        da = ds[var]
+    # ------------------------------------------------------------------
+    # Data variables
+    # ------------------------------------------------------------------
+    variables: dict = {}
 
-        entry = {
+    for name, da in ds.data_vars.items():
+        variables[name] = {
             "dims": da.dims,
             "shape": da.shape,
             "dtype": str(da.dtype),
             "size_mb": da.nbytes / 1e6,
-            "min": float(da.min().values)
-            if np.issubdtype(da.dtype, np.number)
-            else None,
-            "max": float(da.max().values)
-            if np.issubdtype(da.dtype, np.number)
-            else None,
-            "missing": int(np.isnan(da.values).sum())
-            if np.issubdtype(da.dtype, np.floating)
-            else None,
             "coords": list(da.coords),
         }
 
-        # Temporal and spatial resolution
-        if "time" in da.dims:
-            if da.sizes["time"] > 1:
-                time_diffs = np.diff(da["time"].values)
-                # Convert timedelta64 to days
-                if np.issubdtype(time_diffs.dtype, np.timedelta64):
-                    entry["temporal_resolution_days"] = float(
-                        np.mean(time_diffs) / np.timedelta64(1, "D")
-                    )
-                else:
-                    entry["temporal_resolution"] = str(np.mean(time_diffs))
-            else:
-                entry["temporal_resolution"] = None
-        for dim in da.dims:
-            if (
-                dim in ds.coords
-                and hasattr(ds[dim], "values")
-                and ds[dim].sizes[dim] > 1
-            ):
-                diffs = np.diff(ds[dim].values)
-                if np.issubdtype(diffs.dtype, np.timedelta64):
-                    entry[f"{dim}_resolution_days"] = float(
-                        np.mean(diffs) / np.timedelta64(1, "D")
-                    )
-                elif np.issubdtype(diffs.dtype, np.number):
-                    entry[f"{dim}_resolution"] = float(np.mean(diffs))
-                else:
-                    entry[f"{dim}_resolution"] = str(np.mean(diffs))
+    summary["variables"] = variables
 
-        if (
-            da.dtype.kind == "f"
-            and "time" in da.dims
-            and da.size > 1e5  # skip tiny arrays
-        ):
-            try:
-                bitinfo_ds = analyze_bitinfo(ds, var)
-                entry["bitinfo"] = summarize_bitinfo(bitinfo_ds)
-            except Exception as e:
-                entry["bitinfo"] = {"error": str(e)}
-        else:
-            entry["bitinfo"] = "skipped"
+    # ------------------------------------------------------------------
+    # Coordinates
+    # ------------------------------------------------------------------
+    coordinates: dict = {}
 
-        summary[var] = entry
-
-    # Add global coordinate structure
-    summary["coordinates"] = {
-        name: {
-            "dims": ds[name].dims,
-            "shape": ds[name].shape,
-            "dtype": str(ds[name].dtype),
-            "min": float(ds[name].min().values)
-            if np.issubdtype(ds[name].dtype, np.number)
-            else None,
-            "max": float(ds[name].max().values)
-            if np.issubdtype(ds[name].dtype, np.number)
-            else None,
+    for name, coord in ds.coords.items():
+        entry = {
+            "dims": coord.dims,
+            "shape": coord.shape,
+            "dtype": str(coord.dtype),
         }
-        for name in ds.coords
-    }
 
-    return summary
+        # Best-effort time frequency inference (planning only)
+        if name == "time" and coord.sizes.get("time", 0) > 1:
+            entry["time_frequency"] = _infer_freq(coord)
 
+        coordinates[name] = entry
 
-def analyze_bitinfo(ds: xr.Dataset, var: str):
-    """
-    Compute bit-level information content for a variable.
-    """
-    info = get_bitinformation(
-        ds[[var]],
-        dim="time",  # or appropriate dimension
-        implementation="python",
-    )
-
-    return info
-
-
-def summarize_bitinfo(bitinfo_ds) -> Dict:
-    """
-    Summarize xbitinfo output from the python/plain implementation.
-
-    This function:
-    - extracts aggregate information-theoretic metrics (if present)
-    - does NOT assume per-bit resolution
-    - works across xbitinfo versions
-    - reports evidence only (no decisions)
-    """
-    summary = {
-        "implementation": "python",
-        "metrics": {},
-    }
-
-    for name, da in bitinfo_ds.data_vars.items():
-        try:
-            metric_summary = {}
-            # Extract all attributes from xbitinfo output
-            if hasattr(da, "attrs") and da.attrs:
-                for key, value in da.attrs.items():
-                    metric_summary[key] = value
-            # Also summarize values
-            values = da.values
-            if values.size == 1:
-                metric_summary["value"] = float(values)
-            else:
-                metric_summary["mean"] = float(values.mean())
-                metric_summary["max"] = float(values.max())
-                metric_summary["min"] = float(values.min())
-            summary["metrics"][name] = metric_summary
-        except Exception as e:
-            summary["metrics"][name] = f"unreadable ({e})"
-
-    if not summary["metrics"]:
-        summary["note"] = "No usable information-theoretic metrics returned"
+    summary["coordinates"] = coordinates
 
     return summary
 
@@ -688,8 +578,17 @@ def _print_before_after_comparison(
     original_path: str,
     compressed_path: str,
     variable: str,
+    max_samples: int = 1_000_000,
 ) -> None:
-    print("\n=== BEFORE / AFTER COMPARISON ===")
+    """
+    Print a lightweight before/after comparison of file size and
+    sampled variable statistics.
+
+    NOTE:
+    This function intentionally uses sampled statistics for speed.
+    Full-fidelity error metrics are computed elsewhere.
+    """
+    print("\n=== BEFORE / AFTER COMPARISON (QUICK) ===")
 
     # ------------------------------------------------------------------
     # File size
@@ -719,14 +618,44 @@ def _print_before_after_comparison(
     print(f"  dtype: {a.dtype} → {b.dtype}")
     print(f"  shape: {a.shape} → {b.shape}")
 
-    # Numeric summaries
+    # ------------------------------------------------------------------
+    # Sampled numeric summaries
+    # ------------------------------------------------------------------
     if np.issubdtype(a.dtype, np.number):
-        print("\nStatistics:")
-        print(f"  min:  {float(a.min()):.6e} → {float(b.min()):.6e}")
-        print(f"  max:  {float(a.max()):.6e} → {float(b.max()):.6e}")
-        print(f"  mean: {float(a.mean()):.6e} → {float(b.mean()):.6e}")
+        stats_a = _sampled_stats(a, max_samples=max_samples)
+        stats_b = _sampled_stats(b, max_samples=max_samples)
+
+        print("\nStatistics (sampled):")
+        print(f"  min:  {stats_a['min']:.6e} → {stats_b['min']:.6e}")
+        print(f"  max:  {stats_a['max']:.6e} → {stats_b['max']:.6e}")
+        print(f"  mean: {stats_a['mean']:.6e} → {stats_b['mean']:.6e}")
 
     print()
+
+
+def _sampled_stats(
+    da: xr.DataArray,
+    max_samples: int = 1_000_000,
+) -> dict[str, float]:
+    """
+    Compute approximate min/max/mean using a bounded number of samples.
+
+    This function is intended for fast, human-facing summaries only.
+    It should NOT be used for scientific acceptance criteria.
+    """
+    # Flatten lazily
+    da = da.stack(_flat=da.dims)
+
+    n = da.sizes["_flat"]
+    if n > max_samples:
+        step = max(1, n // max_samples)
+        da = da.isel(_flat=slice(0, n, step))
+
+    return {
+        "min": float(da.min().values),
+        "max": float(da.max().values),
+        "mean": float(da.mean().values),
+    }
 
 
 def _accept_plan(

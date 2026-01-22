@@ -1,7 +1,6 @@
 from datetime import datetime
 from pathlib import Path
 
-import xbitinfo as xb
 from xcdat.tutorial import open_dataset
 import xarray as xr
 
@@ -17,46 +16,6 @@ from agentic.workflows.compression import (
 
 # Use xcdat.tutorial.open_dataset for example datasets
 # See: https://github.com/xCDAT/xcdat/blob/main/xcdat/tutorial.py
-
-# Default dataset-variable map. Filepath indicates the full path to the NetCDF file.
-# The user can pass use_subset to use xcdat tutorial datasets instead, which
-# are smaller subsets suitable for testing.
-DATASET_MAP = {
-    "pr_amon_access": {
-        "var_name": "pr",
-        "filepath": "pr_Amon_ACCESS-ESM1-5_historical_r10i1p1f1_gn_185001-201412.nc",
-    },
-    "tas_amon_access": {
-        "var_name": "tas",
-        "filepath": "tas_Amon_ACCESS-ESM1-5_historical_r10i1p1f1_gn_185001-201412.nc",
-    },
-    "tas_3hr_access": {
-        "var_name": "tas",
-        "filepath": "tas_3hr_ACCESS-ESM1-5_historical_r10i1p1f1_gn_201001010300-201501010000.nc",
-    },
-    "tas_amon_canesm5": {
-        "var_name": "tas",
-        "filepath": "tas_Amon_CanESM5_historical_r13i1p1f1_gn_185001-201412.nc",
-    },
-    "so_omon_cesm2": {
-        "var_name": "so",
-        "filepath": "so_Omon_CESM2_historical_r1i1p1f1_gn_185001-201412.nc",
-    },
-    "thetao_omon_cesm2": {
-        "var_name": "thetao",
-        "filepath": "thetao_Omon_CESM2_historical_r1i1p1f1_gn_185001-201412.nc",
-    },
-    "cl_amon_e3sm2": {
-        "var_name": "cl",
-        "filepath": "cl_Amon_E3SM-2-0_historical_r1i1p1f1_gr_185001-189912.nc",
-    },
-    "ta_amon_e3sm2": {
-        "var_name": "ta",
-        "filepath": "ta_Amon_E3SM-2-0_historical_r1i1p1f1_gr_185001-189912.nc",
-    },
-}
-
-
 INPUT_DIR = Path("data/input/")
 OUTPUT_DIR = Path("data/output/")
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,6 +23,45 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 OUTPUT_ACCEPTANCE_JSON = OUTPUT_DIR / f"acceptance_summary_{TIMESTAMP}.json"
+
+# Default dataset-variable map. Filepath indicates the full path to the NetCDF file.
+# The user can pass use_subset to use xcdat tutorial datasets instead, which
+# are smaller subsets suitable for testing.
+DATASET_MAP = {
+    "pr_amon_access": {
+        "var_name": "pr",
+        "filename": "pr_Amon_ACCESS-ESM1-5_historical_r10i1p1f1_gn_185001-201412.nc",
+    },
+    "tas_amon_access": {
+        "var_name": "tas",
+        "filename": "tas_Amon_ACCESS-ESM1-5_historical_r10i1p1f1_gn_185001-201412.nc",
+    },
+    "tas_3hr_access": {
+        "var_name": "tas",
+        "filename": "tas_3hr_ACCESS-ESM1-5_historical_r10i1p1f1_gn_201001010300-201501010000.nc",
+    },
+    "tas_amon_canesm5": {
+        "var_name": "tas",
+        "filename": "tas_Amon_CanESM5_historical_r13i1p1f1_gn_185001-201412.nc",
+    },
+    "so_omon_cesm2": {
+        "var_name": "so",
+        "filename": "so_Omon_CESM2_historical_r1i1p1f1_gn_185001-201412.nc",
+    },
+    "thetao_omon_cesm2": {
+        "var_name": "thetao",
+        "filename": "thetao_Omon_CESM2_historical_r1i1p1f1_gn_185001-201412.nc",
+    },
+    "cl_amon_e3sm2": {
+        "var_name": "cl",
+        "filename": "cl_Amon_E3SM-2-0_historical_r1i1p1f1_gr_185001-189912.nc",
+    },
+    "ta_amon_e3sm2": {
+        "var_name": "ta",
+        "filename": "ta_Amon_E3SM-2-0_historical_r1i1p1f1_gr_185001-189912.nc",
+    },
+}
+
 
 # Relative error thresholds for compression safety.
 # These values are conservative defaults for climate modeling data:
@@ -76,10 +74,6 @@ SAFETY_THRESHOLDS = {
     "max_abs_rel": 0.005,  # Relative max absolute error (e.g., 0.5% of value range)
     "mean_abs_rel": 0.0005,  # Relative mean absolute error (e.g., 0.05% of value range)
 }
-
-# -----------------------------------------------------------------------------
-# Main compression agent loop (with get_keepbits)
-# -----------------------------------------------------------------------------
 
 
 def main(use_subset: bool = True) -> None:
@@ -96,24 +90,24 @@ def main(use_subset: bool = True) -> None:
 
     for dataset_key, dataset_info in DATASET_MAP.items():
         var = dataset_info["var_name"]
-        filename = dataset_info.get("filepath")
+        input_filename = dataset_info.get("filename")
 
         print(f"\n=== Dataset: {dataset_key} | Variable: {var} ===")
 
         # 1. Open the input dataset
         # -----------------------------
-        if use_subset:
-            filename = f"{filename.replace('.nc', '_subset.nc')}"
-            input_path = INPUT_DIR / filename
+        if not use_subset:
+            input_filepath = INPUT_DIR / input_filename
+            ds = xr.open_dataset(input_filepath, decode_times=False)
+        else:
+            input_filename = f"{input_filename.replace('.nc', '_subset.nc')}"
+            input_filepath = INPUT_DIR / input_filename
 
             try:
-                ds = xr.open_dataset(input_path)
+                ds = xr.open_dataset(input_filepath, decode_times=False)
             except FileNotFoundError:
                 ds = open_dataset(dataset_key)
-                ds.to_netcdf(input_path)
-        else:
-            input_path = INPUT_DIR / filename
-            ds = xr.open_dataset(filename)
+                ds.to_netcdf(input_filepath)
 
         # 2. Inspect the dataset and request a compression plan from the agent
         # ---------------------------------------------------------------------
@@ -131,14 +125,18 @@ def main(use_subset: bool = True) -> None:
 
         # --- Candidate 1: plan-based compression ---
         print("\n--- Candidate 1: plan-based compression ---")
+        print("Building dataset encoding from plan...")
         encoding = _build_encoding_from_plan(ds, plan)
-        compressed_path = OUTPUT_DIR / f"compressed_plan_{filename}.nc"
-        ds.to_netcdf(str(compressed_path), encoding=encoding)
 
+        print("Applying compression to dataset and writing to disk...")
+        compressed_path = OUTPUT_DIR / f"compressed_plan_{input_filename}"
+        ds.to_netcdf(compressed_path, encoding=encoding)
+
+        print("Evaluating compressed dataset against safety thresholds...")
         accepted = _evaluate_and_accept_plan(
-            original_path=input_path,
+            original_path=input_filepath,
             compressed_path=str(compressed_path),
-            dataset=filename,
+            dataset=input_filename,
             variable=var,
             thresholds=SAFETY_THRESHOLDS,
             candidate_desc={"description": "plan-based compression"},
@@ -147,45 +145,8 @@ def main(use_subset: bool = True) -> None:
         )
 
         if accepted:
+            print(f"Plan-based compression accepted: {accepted}")
             candidate_used = "plan-based compression"
-
-        # --- Candidate 2: xbitinfo bitround (only if needed) ---
-        if not accepted:
-            print("\n--- Candidate 2: xbitinfo bitround ---")
-            bitinfo = xb.get_bitinformation(
-                ds[[var]],
-                dim="time",
-                implementation="python",
-            )
-            keepbits = xb.get_keepbits(bitinfo, inflevel=0.99)
-            print(f"xbitinfo keepbits for {var}: {keepbits}")
-            ds_bitrounded = ds.copy()
-            ds_bitrounded[var] = xb.xr_bitround(ds_bitrounded[[var]], keepbits)[var]
-            compressed_path = OUTPUT_DIR / f"compressed_xbitinfo_{dataset_key}_{var}.nc"
-            ds_bitrounded.to_netcdf(compressed_path)
-
-            encoding = {
-                var: {
-                    "dtype": ds[var].dtype,
-                    "bit_rounding": int(keepbits),
-                }
-            }
-            accepted = _evaluate_and_accept_plan(
-                original_path=input_path,
-                compressed_path=compressed_path,
-                dataset=filename,
-                variable=var,
-                thresholds=SAFETY_THRESHOLDS,
-                candidate_desc={
-                    "description": f"xbitinfo bitround with keepbits={keepbits}"
-                },
-                output_json=OUTPUT_ACCEPTANCE_JSON,
-                encoding=encoding,
-            )
-
-            if accepted:
-                candidate_used = f"xbitinfo bitround (keepbits={keepbits})"
-
         # --- Fallback: lossless compression (safety net) ---
         if not accepted:
             print(
@@ -196,14 +157,14 @@ def main(use_subset: bool = True) -> None:
             encoding = _lossless_encoding(ds)
             _accept_plan(
                 encoding=encoding,
-                evaluation=_fallback_result(filename, var),
+                evaluation=_fallback_result(input_filename, var),
                 output_json=OUTPUT_ACCEPTANCE_JSON,
                 agent_opinion=None,
             )
             candidate_used = "lossless compression"
 
-        # Collect summary info for this variable
-        orig_size_mb = input_path.stat().st_size / (1024 * 1024)
+        # Collect summary info for this dataset
+        orig_size_mb = input_filepath.stat().st_size / (1024 * 1024)
         comp_size_mb = (
             Path(compressed_path).stat().st_size / (1024 * 1024)
             if compressed_path and Path(compressed_path).exists()
@@ -227,12 +188,15 @@ def main(use_subset: bool = True) -> None:
 
 def _check_valid_filepaths(dataset_map: dict[str, dict[str, str]]) -> None:
     for dataset_name, info in dataset_map.items():
-        filename = info.get("filepath")
+        filename = info["filename"]
+        filepath = INPUT_DIR / filename
 
-        if not filename or not Path(filename).exists():
+        if not Path(filepath).exists():
             raise ValueError(
                 f"Dataset {dataset_name} requires a valid 'filepath' when use_subset=False"
             )
+
+    print("All dataset filepaths are valid.\n")
 
 
 def _print_batch_summary(summary_results):
@@ -259,4 +223,4 @@ def _print_batch_summary(summary_results):
 
 
 if __name__ == "__main__":
-    main()
+    main(use_subset=False)
