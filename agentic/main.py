@@ -27,6 +27,8 @@ OUTPUT_ACCEPTANCE_JSON = OUTPUT_DIR / f"acceptance_summary_{TIMESTAMP}.json"
 # Default dataset-variable map. Filepath indicates the full path to the NetCDF file.
 # The user can pass use_subset to use xcdat tutorial datasets instead, which
 # are smaller subsets suitable for testing.
+# TODO: Map filemaps on perlmutter or other shared storage for easier access
+# across users and runs.
 DATASET_MAP = {
     "pr_amon_access": {
         "var_name": "pr",
@@ -142,6 +144,7 @@ def main(use_subset: bool = True) -> None:
             candidate_desc={"description": "plan-based compression"},
             output_json=OUTPUT_ACCEPTANCE_JSON,
             encoding=encoding,
+            print_agent_opinion=True,
         )
 
         if accepted:
@@ -223,4 +226,4 @@ def _print_batch_summary(summary_results):
 
 
 if __name__ == "__main__":
-    main(use_subset=False)
+    main(use_subset=True)

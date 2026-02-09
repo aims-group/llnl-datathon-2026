@@ -446,7 +446,7 @@ def _evaluate_and_accept_plan(
     candidate_desc,
     encoding,
     output_json,
-    print_agent_opinion=False,
+    print_agent_opinion,
 ) -> bool:
     evaluation = _evaluate_plan(
         original_path, compressed_path, dataset, variable, thresholds
