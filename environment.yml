@@ -3,20 +3,24 @@ channels:
   - conda-forge
 dependencies:
   - python>=3.11
+  # Environment management
+  - python-dotenv
+  # Core scientific libraries
   - numpy
   - scipy
-  - xarray
-  - netCDF4
-  - dask
-  - zarr
   - matplotlib
+  # Data handling
+  - netCDF4
+  - xarray
+  - xbitinfo-python
+  - xcdat>=0.11.1
+  # Parallel and image processing
+  - dask
   - scikit-image
-  - opencv
+  # Agent / orchestration
   - langgraph
-  - pip:
-      - llama-index
-      - git+https://github.com/openai/CLIP.git  # OpenAI CLIP for vision-language alignment
-      # The following are open-source LLMs, typically run outside conda, but included for completeness
-      # - llama3  # LLaMA 3 (install via pip or external tools, placeholder)
-      # - qwen2.5  # Qwen 2.5 (install via pip or external tools, placeholder)
-      # - mixtral  # Mixtral (install via pip or external tools, placeholder)
+  # LLM clients
+  - openai
+  # Dev / QA
+  - ruff
+  - jupyterlab

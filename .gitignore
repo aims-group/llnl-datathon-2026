@@ -21,6 +21,7 @@ venv/
 ENV/
 .env
 .env.*
+!.env.template
 *.bak
 *.tmp
 *.swp
@@ -28,7 +29,6 @@ ENV/
 # Jupyter
 .ipynb_checkpoints/
 # VSCode
-.vscode/
 # macOS
 *.DS_Store
 # NetCDF
